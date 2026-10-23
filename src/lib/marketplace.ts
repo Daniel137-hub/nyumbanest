@@ -143,11 +143,18 @@ function mapProperty(property: PublicProperty, images: PublicPropertyImage[]): P
   };
 }
 
-export async function getPublicListings(filters: MarketplaceFilters) {
+export async function getPublicListings(
+  filters: MarketplaceFilters,
+  options: { pageSize?: number; includeCount?: boolean } = {},
+) {
   await connection();
   try {
     const supabase = await createClient();
-    let query = supabase.from("properties").select(PROPERTY_COLUMNS, { count: "exact" })
+    const pageSize = Math.min(PAGE_SIZE, Math.max(1, options.pageSize ?? PAGE_SIZE));
+    let query = supabase.from("properties").select(
+      PROPERTY_COLUMNS,
+      options.includeCount === false ? {} : { count: "exact" },
+    )
       .eq("status", "published");
 
     if (filters.ids) query = query.in("id", filters.ids);
@@ -172,8 +179,8 @@ export async function getPublicListings(filters: MarketplaceFilters) {
     );
     if (filters.sort === "newest") query = query.order("created_at", { ascending: false });
 
-    const from = (filters.page - 1) * PAGE_SIZE;
-    const { data, error, count } = await query.range(from, from + PAGE_SIZE - 1);
+    const from = (filters.page - 1) * pageSize;
+    const { data, error, count } = await query.range(from, from + pageSize - 1);
     if (error) return { data: null, count: 0, error: "We couldn't load properties right now. Please try again." };
 
     const properties = data ?? [];
@@ -194,7 +201,7 @@ export async function getPublicListings(filters: MarketplaceFilters) {
     }
     return {
       data: properties.map((property) => mapProperty(property, imagesById.get(property.id) ?? [])),
-      count: count ?? 0,
+      count: count ?? properties.length,
       error: null,
     };
   } catch {

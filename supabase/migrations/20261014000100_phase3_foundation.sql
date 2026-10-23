@@ -196,7 +196,10 @@ create policy "properties_owner_insert_unprivileged" on public.properties for in
   with check (owner_id = (select auth.uid()) and status in ('draft', 'pending_review') and not is_verified and published_at is null);
 create policy "properties_owner_update_unprivileged" on public.properties for update to authenticated
   using (owner_id = (select auth.uid()))
-  with check (owner_id = (select auth.uid()) and status in ('draft', 'pending_review', 'published'));
+  with check (
+    owner_id = (select auth.uid())
+    and status in ('draft', 'pending_review')
+  );
 create policy "properties_explicit_admin_all" on public.properties for all to authenticated
   using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
   with check ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');

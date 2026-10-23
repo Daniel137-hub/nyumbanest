@@ -4,7 +4,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CloudUpload, Eye, HousePlus, Pencil, Trash2, X } from "lucide-react";
+import { BadgeCheck, CircleCheck, CloudUpload, Eye, HousePlus, Pencil, Trash2, X } from "lucide-react";
+import { approveProperty, deletePropertyAsAdmin } from "@/app/actions/admin";
 import { deleteProperty } from "@/app/actions/properties";
 import { PropertyCard } from "@/components/marketplace/marketplace-content";
 import { formatPropertyPrice, type PropertyFixture } from "@/lib/property-display";
@@ -36,10 +37,12 @@ export function MyListingsBoard({
   listings,
   loadError,
   success,
+  isAdmin = false,
 }: {
   listings: PropertyWithImages[];
   loadError?: string;
   success?: "created" | "updated";
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const previewDialog = useRef<HTMLDialogElement>(null);
@@ -48,7 +51,9 @@ export function MyListingsBoard({
   const [preview, setPreview] = useState<PropertyWithImages | null>(null);
   const [deleting, setDeleting] = useState<PropertyWithImages | null>(null);
   const [busy, setBusy] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
     if (preview && !previewDialog.current?.open) previewDialog.current?.showModal();
@@ -84,7 +89,9 @@ export function MyListingsBoard({
     setBusy(true);
     setMessage("");
     try {
-      const result = await deleteProperty(deleting.property.id);
+      const result = isAdmin
+        ? await deletePropertyAsAdmin(deleting.property.id)
+        : await deleteProperty(deleting.property.id);
       if (result.error) {
         setMessage(result.error);
         return;
@@ -98,11 +105,36 @@ export function MyListingsBoard({
     }
   }
 
+  async function approveListing(propertyId: string) {
+    if (approvingId || busy) return;
+    setApprovingId(propertyId);
+    setMessage("");
+    setSuccessMessage("");
+    try {
+      const result = await approveProperty(propertyId);
+      if (result.error) {
+        setMessage(result.error);
+        return;
+      }
+      setSuccessMessage("Listing approved and published.");
+      router.refresh();
+    } catch {
+      setMessage("We couldn't approve this listing. Check your connection and try again.");
+    } finally {
+      setApprovingId(null);
+    }
+  }
+
   return <>
-    <p className="destination-page__description">Manage your properties, update listing details, and track their status.</p>
+    <p className="destination-page__description">{isAdmin
+      ? "Review and manage property listings submitted by all users."
+      : "Manage your properties, update listing details, and track their status."}</p>
     <div className="my-listings-heading">
-      <div><h2>Property dashboard</h2><p>Only you can manage your listings.</p></div>
-      <Link className="button button--primary" href="/my-listings/new"><HousePlus size={17} aria-hidden="true" /> Add Property</Link>
+      <div><h2>{isAdmin ? "All property listings" : "Property dashboard"}</h2>
+        <p>{isAdmin ? "Approve pending listings to publish them on the marketplace." : "Only you can manage your listings."}</p></div>
+      {!isAdmin
+        ? <Link className="button button--primary" href="/my-listings/new"><HousePlus size={17} aria-hidden="true" /> Add Property</Link>
+        : null}
     </div>
 
     {success ? <p className="listing-feedback listing-feedback--success" role="status">
@@ -110,6 +142,7 @@ export function MyListingsBoard({
       {success === "created" ? " It will appear here while it is reviewed." : ""}
     </p> : null}
     {message ? <p className="auth-message auth-message--error" role="alert">{message}</p> : null}
+    {successMessage ? <p className="listing-feedback listing-feedback--success" role="status">{successMessage}</p> : null}
 
     {loadError ? <section className="listing-state-card" role="alert">
       <h2>We couldn&apos;t load your listings</h2>
@@ -117,10 +150,12 @@ export function MyListingsBoard({
       <button className="button button--secondary" type="button" onClick={() => router.refresh()}>Retry</button>
     </section> : listings.length === 0 ? <section className="listing-empty-card">
       <span className="listing-empty-card__icon"><CloudUpload size={43} strokeWidth={1.6} aria-hidden="true" /></span>
-      <h2>You haven&apos;t listed any properties yet.</h2>
-      <p>Your properties will appear here after you add your first listing.</p>
-      <Link className="button button--primary" href="/my-listings/new">Upload Your First Property</Link>
-      <Link className="listing-empty-card__secondary" href="/search">Explore the Marketplace</Link>
+      <h2>{isAdmin ? "There are no property listings yet." : <>You haven&apos;t listed any properties yet.</>}</h2>
+      <p>{isAdmin ? "Listings submitted by users will appear here." : "Your properties will appear here after you add your first listing."}</p>
+      {isAdmin
+        ? null
+        : <><Link className="button button--primary" href="/my-listings/new">Upload Your First Property</Link>
+          <Link className="listing-empty-card__secondary" href="/search">Explore the Marketplace</Link></>}
     </section> : <>
       <section className="listing-summary" aria-label="Listing counts">
         <div><strong>{counts.total}</strong><span>Total listings</span></div>
@@ -138,7 +173,7 @@ export function MyListingsBoard({
           <option value="published">Published</option><option value="rejected">Needs changes</option>
           <option value="rented">Rented</option><option value="sold">Sold</option>
         </select>
-        <Link className="listing-filters__add" href="/my-listings/new">Add another property</Link>
+        {!isAdmin ? <Link className="listing-filters__add" href="/my-listings/new">Add another property</Link> : null}
       </div>
       {filteredListings.length ? <div className="property-grid my-listings-grid">
         {filteredListings.map((entry) => {
@@ -146,6 +181,7 @@ export function MyListingsBoard({
           const label = propertyStatusLabel(entry.property.status);
           return <PropertyCard key={entry.property.id} property={card}
             detailsHref={`/my-listings/${entry.property.id}/edit`} managementStatus={label}
+            managementLabel={isAdmin ? `Owner: ${entry.ownerName || `Account ${entry.property.owner_id.slice(0, 8)}`}` : undefined}
             actions={<div className="property-management-actions">
               <Link className="property-management-actions__link" href={`/my-listings/${entry.property.id}/edit`}>
                 <Pencil size={14} aria-hidden="true" /> Edit
@@ -153,6 +189,19 @@ export function MyListingsBoard({
               <button className="property-management-actions__link" type="button" onClick={() => setPreview(entry)}>
                 <Eye size={14} aria-hidden="true" /> Preview
               </button>
+              {isAdmin && entry.property.status === "pending_review" ? <button
+                className="property-management-actions__approve"
+                type="button"
+                disabled={approvingId !== null || busy}
+                title="Approve and publish listing"
+                aria-label={`Approve ${entry.property.title}`}
+                onClick={() => approveListing(entry.property.id)}
+              >
+                {approvingId === entry.property.id
+                  ? <BadgeCheck size={14} aria-hidden="true" />
+                  : <CircleCheck size={14} aria-hidden="true" />}
+                {approvingId === entry.property.id ? "Approving…" : "Approve"}
+              </button> : null}
               <button className="property-management-actions__delete" type="button" onClick={() => {
                 setMessage("");
                 setDeleting(entry);

@@ -59,6 +59,7 @@ export function PropertyCard({
   property,
   detailsHref,
   managementStatus,
+  managementLabel,
   actions,
   favoriteAction,
   hideFavorite = false,
@@ -66,6 +67,7 @@ export function PropertyCard({
   property: PropertyFixture;
   detailsHref?: string;
   managementStatus?: string;
+  managementLabel?: string;
   actions?: ReactNode;
   favoriteAction?: ReactNode;
   hideFavorite?: boolean;
@@ -133,7 +135,10 @@ export function PropertyCard({
           {managementStatus}
         </span> : null}
       </Link>
-      {actions ? <div className="property-card__management">{actions}</div> : null}
+      {actions ? <div className="property-card__management">
+        {managementLabel ? <p className="property-card__management-label">{managementLabel}</p> : null}
+        {actions}
+      </div> : null}
     </article>
   );
 }

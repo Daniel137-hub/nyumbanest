@@ -347,6 +347,66 @@ select:focus-visible {
   object-position: center 48%;
 }
 
+.hero__track {
+  position: absolute;
+  inset: 0;
+}
+
+.hero__slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: hero-slide-one 21s linear infinite;
+  will-change: opacity;
+}
+
+.hero__slide:nth-child(2) {
+  animation-name: hero-slide-two;
+}
+
+.hero__slide:nth-child(3) {
+  animation-name: hero-slide-three;
+}
+
+.hero__slide img {
+  object-fit: cover;
+}
+
+.hero__slide:nth-child(1) img {
+  object-position: 60% 54%;
+}
+
+.hero__slide:nth-child(2) img {
+  object-position: 56% 52%;
+}
+
+.hero__slide:nth-child(3) img {
+  object-position: center 54%;
+}
+
+.hero:hover .hero__slide,
+.hero:focus-within .hero__slide {
+  animation-play-state: paused;
+}
+
+@keyframes hero-slide-one {
+  0%, 27% { opacity: 1; }
+  33.333%, 93.333% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes hero-slide-two {
+  0%, 27% { opacity: 0; }
+  33.333%, 60% { opacity: 1; }
+  66.667%, 100% { opacity: 0; }
+}
+
+@keyframes hero-slide-three {
+  0%, 60% { opacity: 0; }
+  66.667%, 93.333% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 .hero__image-fallback {
   position: absolute;
   inset: 0;
@@ -1802,8 +1862,16 @@ select:focus-visible {
       linear-gradient(90deg, rgb(247 245 240 / 12%), transparent 75%);
   }
 
-  .hero__image img {
-    object-position: 65% 49%;
+  .hero__slide:nth-child(1) img {
+    object-position: 65% 50%;
+  }
+
+  .hero__slide:nth-child(2) img {
+    object-position: 60% 50%;
+  }
+
+  .hero__slide:nth-child(3) img {
+    object-position: center 52%;
   }
 
   .hero__content {
@@ -2160,6 +2228,18 @@ select:focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  .hero__slide {
+    animation: none !important;
+  }
+
+  .hero__slide:first-child {
+    opacity: 1;
+  }
+
+  .hero__slide:nth-child(n + 2) {
+    display: none;
+  }
 }
 
 .auth-page {
@@ -2170,6 +2250,7 @@ select:focus-visible {
 }
 
 .auth-layout {
+  position: relative;
   display: grid;
   width: min(100%, 1000px);
   min-height: 660px;
@@ -2179,6 +2260,34 @@ select:focus-visible {
   border-radius: 22px;
   background: white;
   box-shadow: 0 22px 70px rgb(35 45 39 / 11%);
+}
+
+.auth-close {
+  position: absolute;
+  z-index: 3;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgb(232 230 223 / 88%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 95%);
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgb(11 29 41 / 12%);
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.auth-close:hover {
+  background: white;
+  transform: translateY(-1px);
+}
+
+.auth-close:focus-visible {
+  outline: 3px solid rgb(7 86 63 / 45%);
+  outline-offset: 3px;
 }
 
 .auth-card {
@@ -2424,14 +2533,27 @@ select:focus-visible {
 .auth-story__image {
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(0deg, rgb(9 35 27 / 80%), rgb(9 35 27 / 3%) 80%), url("/images/family-home.jpg");
-  background-position: center;
-  background-size: cover;
+  overflow: hidden;
+  background: #dfe8dd;
+}
+
+.auth-story__image img {
+  z-index: 0;
+  object-fit: cover;
+  object-position: center;
+}
+
+.auth-story__image::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: linear-gradient(0deg, rgb(9 35 27 / 80%), rgb(9 35 27 / 3%) 80%);
+  content: "";
 }
 
 .auth-story__copy {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   max-width: 330px;
 }
 
@@ -2886,6 +3008,13 @@ select:focus-visible {
   padding: 0 15px 14px;
 }
 
+.property-card__management-label {
+  margin: 0 0 8px;
+  color: var(--ink-muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
 .property-management-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2894,6 +3023,7 @@ select:focus-visible {
 }
 
 .property-management-actions__link,
+.property-management-actions__approve,
 .property-management-actions__delete {
   display: inline-flex;
   align-items: center;
@@ -2905,6 +3035,16 @@ select:focus-visible {
   cursor: pointer;
   font-size: 11px;
   font-weight: 650;
+}
+
+.property-management-actions__approve {
+  color: var(--brand-green);
+}
+
+.property-management-actions__approve:disabled {
+  color: var(--ink-muted);
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .property-management-actions__delete {
@@ -3153,6 +3293,11 @@ select:focus-visible {
 
   .auth-card {
     padding: 30px clamp(23px, 7vw, 40px);
+  }
+
+  .auth-close {
+    top: 12px;
+    right: 12px;
   }
 
   .auth-card__header {

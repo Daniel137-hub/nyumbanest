@@ -15,13 +15,21 @@ const publicJwk = {
 
 function makeUser(email, fullName = "Test Member", confirmed = true) {
   return {
-    id: email === "member@example.com" ? "11111111-1111-4111-8111-111111111111" : "22222222-2222-4222-8222-222222222222",
+    id: email === "member@example.com"
+      ? "11111111-1111-4111-8111-111111111111"
+      : email === "admin@example.com"
+        ? "88888888-8888-4888-8888-888888888888"
+        : "22222222-2222-4222-8222-222222222222",
     aud: "authenticated",
     role: "authenticated",
     email,
     email_confirmed_at: confirmed ? timestamp : null,
     phone: "",
-    app_metadata: { provider: "email", providers: ["email"] },
+    app_metadata: {
+      provider: "email",
+      providers: ["email"],
+      ...(email === "admin@example.com" ? { role: "admin" } : {}),
+    },
     user_metadata: { full_name: fullName },
     identities: [],
     created_at: timestamp,
@@ -50,14 +58,27 @@ let profilePhotoUploadFailure;
 let profileUpdateFailure;
 let expireNextSession;
 let passwordAuthFailure;
+let approvalRpcFailure;
 
 function reset() {
-  users = new Map([["member@example.com", makeUser("member@example.com")]]);
-  passwords = new Map([["member@example.com", "Correct123"]]);
+  users = new Map([
+    ["member@example.com", makeUser("member@example.com")],
+    ["admin@example.com", makeUser("admin@example.com", "Test Administrator")],
+  ]);
+  passwords = new Map([
+    ["member@example.com", "Correct123"],
+    ["admin@example.com", "Correct123"],
+  ]);
   profiles = new Map([["11111111-1111-4111-8111-111111111111", {
     id: "11111111-1111-4111-8111-111111111111",
     full_name: "Test Member",
     email: "member@example.com",
+    avatar_url: null,
+    phone: null,
+  }], ["88888888-8888-4888-8888-888888888888", {
+    id: "88888888-8888-4888-8888-888888888888",
+    full_name: "Test Administrator",
+    email: "admin@example.com",
     avatar_url: null,
     phone: null,
   }]]);
@@ -79,6 +100,7 @@ function reset() {
   profileUpdateFailure = false;
   expireNextSession = false;
   passwordAuthFailure = false;
+  approvalRpcFailure = false;
 }
 
 reset();
@@ -140,6 +162,18 @@ function requestUserId(request) {
     return payload ? JSON.parse(Buffer.from(payload, "base64url").toString()).sub : null;
   } catch {
     return null;
+  }
+}
+
+function requestIsAdmin(request) {
+  const bearer = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+  const payload = bearer?.split(".")[1];
+  try {
+    return payload
+      ? JSON.parse(Buffer.from(payload, "base64url").toString()).app_metadata?.role === "admin"
+      : false;
+  } catch {
+    return false;
   }
 }
 
@@ -248,6 +282,7 @@ function sessionFor(user, expired = false) {
     iss: issuer,
     role: "authenticated",
     sub: user.id,
+    app_metadata: user.app_metadata,
   })).toString("base64url");
   const unsignedToken = `${header}.${payload}`;
   const accessToken = `${unsignedToken}.${sign("RSA-SHA256", Buffer.from(unsignedToken), privateKey).toString("base64url")}`;
@@ -300,11 +335,12 @@ const server = createServer(async (request, response) => {
     expireNextSignedPhotoUrl = body.expireNextSignedPhotoUrl === true;
     expireNextSession = body.expireNextSession === true;
     passwordAuthFailure = body.passwordAuthFailure === true;
+    approvalRpcFailure = body.approvalRpcFailure === true;
     json(response, 200, { ok: true });
     return;
   }
   if (url.pathname === "/__seed-other-property" && request.method === "POST") {
-    properties.push({
+    const property = {
       id: "33333333-3333-4333-8333-333333333333",
       owner_id: "99999999-9999-4999-8999-999999999999",
       title: "Private other-owner draft",
@@ -316,7 +352,7 @@ const server = createServer(async (request, response) => {
       region: "Arusha",
       district: null,
       neighborhood: null,
-      address: null,
+      address: "Near the Arusha clock tower",
       area_sqm: null,
       bedrooms: null,
       bathrooms: null,
@@ -325,11 +361,32 @@ const server = createServer(async (request, response) => {
       amenities: [],
       latitude: null,
       longitude: null,
-      status: "draft",
+      status: "pending_review",
       is_verified: false,
       published_at: null,
       created_at: timestamp,
       updated_at: timestamp,
+    };
+    profiles.set(property.owner_id, {
+      id: property.owner_id,
+      full_name: "Other Property Owner",
+      email: "owner@example.com",
+      avatar_url: null,
+      phone: null,
+    });
+    properties.push(property);
+    const imagePath = `${property.owner_id}/${property.id}/pending.png`;
+    propertyImages.push({
+      id: "eeeeeeee-eeee-4eee-8eee-333333333333",
+      property_id: property.id,
+      storage_path: imagePath,
+      alt_text: "Pending listing photo",
+      sort_order: 0,
+      created_at: timestamp,
+    });
+    storageObjects.set(imagePath, {
+      data: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC", "base64"),
+      contentType: "image/png",
     });
     json(response, 200, { ok: true });
     return;
@@ -427,6 +484,39 @@ const server = createServer(async (request, response) => {
     json(response, 200, property
       ? [{ address: property.address, latitude: property.latitude, longitude: property.longitude }]
       : []);
+    return;
+  }
+  if (url.pathname === "/rest/v1/rpc/get_admin_property_private_location" && request.method === "POST") {
+    const body = await readBody(request);
+    const property = requestIsAdmin(request)
+      ? properties.find((item) => item.id === body.target_property_id)
+      : null;
+    json(response, 200, property
+      ? [{ address: property.address, latitude: property.latitude, longitude: property.longitude }]
+      : []);
+    return;
+  }
+  if (url.pathname === "/rest/v1/rpc/approve_property" && request.method === "POST") {
+    const body = await readBody(request);
+    const property = properties.find((item) =>
+      item.id === body.target_property_id && item.status === "pending_review");
+    if (!requestIsAdmin(request)) {
+      json(response, 403, { code: "42501", message: "Administrative role required" });
+      return;
+    }
+    if (approvalRpcFailure) {
+      json(response, 500, { code: "mock_approval_failed", message: "Approval failed" });
+      return;
+    }
+    if (!property) {
+      json(response, 404, { code: "P0002", message: "Property not found or not awaiting review" });
+      return;
+    }
+    property.status = "published";
+    property.is_verified = false;
+    property.published_at = new Date().toISOString();
+    response.statusCode = 204;
+    response.end();
     return;
   }
 
@@ -557,9 +647,11 @@ const server = createServer(async (request, response) => {
     const userId = requestUserId(request);
     const body = await readBody(request);
     const paths = Array.isArray(body.prefixes) ? body.prefixes : [];
+    const admin = requestIsAdmin(request);
     const permitted = paths.every((path) => {
       const [ownerId, propertyId] = path.split("/");
-      return ownerId === userId && properties.some((property) => property.id === propertyId && property.owner_id === userId);
+      return (admin || ownerId === userId) && properties.some((property) =>
+        property.id === propertyId && (admin || property.owner_id === userId));
     });
     if (!userId || !permitted) {
       json(response, 403, { message: "Storage policy denied this delete" });
@@ -576,13 +668,16 @@ const server = createServer(async (request, response) => {
       json(response, 401, { message: "Not authenticated" });
       return;
     }
-    const profile = profiles.get(userId);
     if (request.method === "GET") {
-      const rows = profile && pathFilter(url, "id", userId) ? [projectSelectedColumns(url, profile)] : [];
+      const rows = [...profiles.values()]
+        .filter((profile) => requestIsAdmin(request) || profile.id === userId)
+        .filter((profile) => pathFilter(url, "id", profile.id))
+        .map((profile) => projectSelectedColumns(url, profile));
       restJson(response, 200, rows);
       return;
     }
     if (request.method === "PATCH") {
+      const profile = profiles.get(userId);
       const body = await readBody(request);
       if (profileUpdateFailure && Object.hasOwn(body, "avatar_url")) {
         json(response, 500, { code: "mock_profile_update_failed", message: "Profile update failed" });
@@ -620,7 +715,7 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET") {
       let rows = properties.filter((property) =>
         matchesProperty(url, property) &&
-        (property.status === "published" || property.owner_id === userId) &&
+        (requestIsAdmin(request) || property.status === "published" || property.owner_id === userId) &&
         pathFilter(url, "status", property.status) &&
         pathFilter(url, "transaction_type", property.transaction_type) &&
         pathFilter(url, "property_type", property.property_type) &&
@@ -672,7 +767,8 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "PATCH") {
-      const index = properties.findIndex((property) => property.owner_id === userId && matchesProperty(url, property));
+      const index = properties.findIndex((property) =>
+        (requestIsAdmin(request) || property.owner_id === userId) && matchesProperty(url, property));
       if (index < 0) {
         restJson(response, 200, []);
         return;
@@ -690,7 +786,8 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "DELETE") {
-      const index = properties.findIndex((property) => property.owner_id === userId && matchesProperty(url, property));
+      const index = properties.findIndex((property) =>
+        (requestIsAdmin(request) || property.owner_id === userId) && matchesProperty(url, property));
       if (index < 0) {
         restJson(response, 200, []);
         return;
@@ -715,7 +812,7 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET") {
       const rows = propertyImages.filter((image) => matchesImage(url, image) &&
         properties.some((property) => property.id === image.property_id &&
-          (property.owner_id === userId || property.status === "published")))
+          (requestIsAdmin(request) || property.owner_id === userId || property.status === "published")))
         .map((image) => projectSelectedColumns(url, image));
       restJson(response, 200, rows);
       return;
@@ -742,7 +839,8 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "DELETE") {
       const matching = propertyImages.filter((image) => matchesImage(url, image) &&
-        properties.some((property) => property.id === image.property_id && property.owner_id === userId));
+        properties.some((property) => property.id === image.property_id &&
+          (requestIsAdmin(request) || property.owner_id === userId)));
       propertyImages = propertyImages.filter((image) => !matching.includes(image));
       restJson(response, 200, request.headers.prefer?.includes("return=representation") ? matching : []);
       return;

@@ -14,9 +14,11 @@ const featuredFilters = {
 };
 
 export async function MarketplaceHomepage() {
-  const listings = await getPublicListings(featuredFilters);
-  const viewer = await getPublicViewer();
-  const properties = listings.data?.slice(0, 8) ?? [];
+  const [listings, viewer] = await Promise.all([
+    getPublicListings(featuredFilters, { pageSize: 8, includeCount: false }),
+    getPublicViewer(),
+  ]);
+  const properties = listings.data ?? [];
   const favoriteQuery = viewer.user && properties.length
     ? await getFavoritePropertyIds(viewer.user.id, properties.map((item) => item.id))
     : viewer.error

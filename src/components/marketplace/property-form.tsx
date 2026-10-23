@@ -11,6 +11,7 @@ import {
   rollbackNewProperty,
   saveProperty,
 } from "@/app/actions/properties";
+import { savePropertyAsAdmin } from "@/app/actions/admin";
 import type { PropertyFormValues, PropertyImageRow, PropertyRow } from "@/lib/properties";
 import { EMPTY_PROPERTY_FORM, propertyFormFromRow, validatePropertyForm } from "@/lib/properties";
 import { createClient } from "@/lib/supabase/client";
@@ -31,9 +32,13 @@ function inputValue(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | 
 export function PropertyForm({
   property,
   existingImages = [],
+  adminMode = false,
+  successPath,
 }: {
   property?: PropertyRow;
   existingImages?: ExistingImage[];
+  adminMode?: boolean;
+  successPath?: string;
 }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -101,6 +106,16 @@ export function PropertyForm({
     const uploadedPaths: string[] = [];
     try {
       validatePropertyForm(values);
+      if (adminMode && property) {
+        const saved = await savePropertyAsAdmin(property.id, values);
+        if (saved.error) {
+          setMessage(saved.error);
+          return;
+        }
+        router.replace(successPath ?? "/admin");
+        router.refresh();
+        return;
+      }
       const saved = property
         ? { error: null, propertyId: property.id, ownerId: property.owner_id }
         : await saveProperty(null, values, status);
@@ -167,7 +182,7 @@ export function PropertyForm({
       }
 
       setProgress(photos.length ? `Uploaded ${photos.length} of ${photos.length} photos.` : "");
-      router.replace(`/my-listings?success=${property ? "updated" : "created"}`);
+      router.replace(successPath ?? `/my-listings?success=${property ? "updated" : "created"}`);
       router.refresh();
     } catch (error) {
       let cleanupMessage = "";
@@ -285,22 +300,26 @@ export function PropertyForm({
 
     <fieldset className="property-form__photos" disabled={busy}>
       <legend>Property photographs</legend>
-      <p className="property-form__help">Add up to 10 JPEG, PNG, WebP, or AVIF photos, maximum 10 MiB each.</p>
-      <input ref={fileInput} className="visually-hidden" name="photos" type="file" accept="image/jpeg,image/png,image/webp,image/avif"
-        multiple onChange={choosePhotos} aria-label="Choose property photos" />
-      <button className="button button--secondary" type="button" onClick={() => fileInput.current?.click()}>
-        <ImagePlus size={17} aria-hidden="true" /> Add photos
-      </button>
+      {adminMode
+        ? <p className="property-form__help">Photos are shown for review and remain managed by the listing owner.</p>
+        : <>
+          <p className="property-form__help">Add up to 10 JPEG, PNG, WebP, or AVIF photos, maximum 10 MiB each.</p>
+          <input ref={fileInput} className="visually-hidden" name="photos" type="file" accept="image/jpeg,image/png,image/webp,image/avif"
+            multiple onChange={choosePhotos} aria-label="Choose property photos" />
+          <button className="button button--secondary" type="button" onClick={() => fileInput.current?.click()}>
+            <ImagePlus size={17} aria-hidden="true" /> Add photos
+          </button>
+        </>}
       {(keptImages.length > 0 || photos.length > 0) && <div className="property-photo-grid">
         {keptImages.map((image) => <figure key={image.id} className="property-photo">
           <Image src={image.publicUrl} alt={image.alt_text ?? property?.title ?? "Property photo"} fill sizes="140px" unoptimized />
-          <button type="button" aria-label={`Remove photo ${image.sort_order + 1}`}
-            onClick={() => setRemovedImageIds((current) => [...current, image.id])}><X size={15} /></button>
+          {!adminMode ? <button type="button" aria-label={`Remove photo ${image.sort_order + 1}`}
+            onClick={() => setRemovedImageIds((current) => [...current, image.id])}><X size={15} /></button> : null}
         </figure>)}
-        {photos.map((file, index) => <figure key={`${file.name}-${file.lastModified}-${index}`} className="property-photo">
+        {!adminMode ? photos.map((file, index) => <figure key={`${file.name}-${file.lastModified}-${index}`} className="property-photo">
           <Image src={previews[index]} alt={`Selected photo ${index + 1}: ${file.name}`} fill sizes="140px" unoptimized />
           <button type="button" aria-label={`Remove selected photo ${index + 1}`} onClick={() => removePhoto(index)}><X size={15} /></button>
-        </figure>)}
+        </figure>) : null}
       </div>}
       {photoError && <p className="auth-message auth-message--error" role="alert">{photoError}</p>}
     </fieldset>
@@ -310,13 +329,21 @@ export function PropertyForm({
     {photos.length > 0 && busy && <progress className="property-form__progress-bar" max={photos.length}
       value={Math.max(0, Number(progress.match(/photo (\d+)/i)?.[1] ?? (progress.startsWith("Uploaded") ? photos.length : 0)))} />}
     <div className="property-form__actions">
-      <button className="button button--secondary" type="submit" name="intent" value="draft" disabled={busy}>
-        {busy ? "Saving…" : "Save draft"}
-      </button>
-      <button className="button button--primary" type="submit" name="intent" value="review" disabled={busy}>
-        {busy ? "Saving…" : "Submit for review"}
-      </button>
+      {adminMode
+        ? <button className="button button--primary" type="submit" disabled={busy}>
+          {busy ? "Saving…" : "Save changes"}
+        </button>
+        : <>
+          <button className="button button--secondary" type="submit" name="intent" value="draft" disabled={busy}>
+            {busy ? "Saving…" : "Save draft"}
+          </button>
+          <button className="button button--primary" type="submit" name="intent" value="review" disabled={busy}>
+            {busy ? "Saving…" : "Submit for review"}
+          </button>
+        </>}
     </div>
-    <p className="property-form__help">New and updated listings are not published automatically. Listings submitted for review remain unpublished until moderation is complete.</p>
+    <p className="property-form__help">{adminMode
+      ? "Editing a published listing sends it back to pending review."
+      : "New and updated listings are not published automatically. Listings submitted for review remain unpublished until moderation is complete."}</p>
   </form>;
 }

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PrivatePageShell } from "@/components/auth/private-page-shell";
 import { PropertyForm } from "@/components/marketplace/property-form";
 import { OWNER_PROPERTY_COLUMNS, propertyStatusLabel, type PropertyRow } from "@/lib/properties";
-import { requireVerifiedUser } from "@/lib/supabase/auth-guard";
+import { hasAdminRole, requireVerifiedUser } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -14,12 +14,11 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const returnTo = `/my-listings/${encodeURIComponent(id)}/edit`;
   const user = await requireVerifiedUser(returnTo);
+  const isAdmin = hasAdminRole(user);
   const supabase = await createClient();
-  const { data: property, error } = await supabase.from("properties")
-    .select(OWNER_PROPERTY_COLUMNS)
-    .eq("id", id)
-    .eq("owner_id", user.id)
-    .maybeSingle();
+  let propertyQuery = supabase.from("properties").select(OWNER_PROPERTY_COLUMNS).eq("id", id);
+  if (!isAdmin) propertyQuery = propertyQuery.eq("owner_id", user.id);
+  const { data: property, error } = await propertyQuery.maybeSingle();
 
   if (error) {
     return <PrivatePageShell eyebrow="For property owners" title="Edit property" activeItem="Listings">
@@ -30,11 +29,14 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
       </section>
     </PrivatePageShell>;
   }
-  if (!property) redirect("/my-listings");
+  if (!property) redirect(isAdmin ? "/admin" : "/my-listings");
 
-  const { data: privateLocation, error: addressError } = await supabase.rpc("get_owned_property_private_location", {
+  const { data: privateLocation, error: addressError } = await supabase.rpc(
+    isAdmin ? "get_admin_property_private_location" : "get_owned_property_private_location",
+    {
     target_property_id: id,
-  }).maybeSingle();
+    },
+  ).maybeSingle();
   if (addressError) {
     return <PrivatePageShell eyebrow="For property owners" title="Edit property" activeItem="Listings">
       <section className="listing-state-card" role="alert">
@@ -66,11 +68,11 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
     longitude: privateLocation?.longitude ?? null,
   };
 
-  return <PrivatePageShell eyebrow={`For property owners · ${propertyStatusLabel(property.status)}`} title="Edit property" activeItem="Listings">
-    <p className="destination-page__description">Update your property details. Changes to published listings return to moderation before being published again.</p>
+  return <PrivatePageShell eyebrow={`${isAdmin ? "Administrator" : "For property owners"} · ${propertyStatusLabel(property.status)}`} title="Edit property" activeItem="Listings">
+    <p className="destination-page__description">Update this listing&apos;s details. Changes to published listings return to moderation before being published again.</p>
     <PropertyForm property={editableProperty} existingImages={images.map((image) => ({
       ...image,
       publicUrl: supabase.storage.from("property-images").getPublicUrl(image.storage_path).data.publicUrl,
-    }))} />
+    }))} adminMode={isAdmin} successPath={isAdmin ? "/admin?success=updated" : undefined} />
   </PrivatePageShell>;
 }

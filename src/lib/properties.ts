@@ -36,6 +36,7 @@ export type PropertyWrite = Omit<
 export type PropertyWithImages = {
   property: OwnerPropertyRow;
   images: Array<PropertyImageRow & { publicUrl: string }>;
+  ownerName?: string;
 };
 
 export const OWNER_PROPERTY_COLUMNS =

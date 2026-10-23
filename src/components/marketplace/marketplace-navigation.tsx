@@ -55,7 +55,10 @@ async function AuthenticatedMarketplaceNavigation() {
     }
   }
 
-  return <MarketplaceNavigationClient avatarUrl={avatarUrl} />;
+  return <MarketplaceNavigationClient
+    avatarUrl={avatarUrl}
+    isAdmin={user ? user.app_metadata.role === "admin" : false}
+  />;
 }
 
 export function MarketplaceNavigation() {

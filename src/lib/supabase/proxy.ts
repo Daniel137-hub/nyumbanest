@@ -28,7 +28,7 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const privatePaths = ["/my-listings", "/saved", "/profile", "/reset-password"];
+  const privatePaths = ["/admin", "/my-listings", "/saved", "/profile", "/reset-password"];
   if (privatePaths.some((path) => request.nextUrl.pathname === path || request.nextUrl.pathname.startsWith(`${path}/`))) {
     response.headers.set("Cache-Control", "private, no-store, max-age=0");
   }

@@ -96,7 +96,13 @@ function PropertyMenu({
   );
 }
 
-export function MarketplaceNavigationClient({ avatarUrl }: { avatarUrl: string | null }) {
+export function MarketplaceNavigationClient({
+  avatarUrl,
+  isAdmin = false,
+}: {
+  avatarUrl: string | null;
+  isAdmin?: boolean;
+}) {
   const pathname = usePathname();
   const navigationRef = useRef<HTMLElement>(null);
   const propertyButtonRef = useRef<HTMLButtonElement>(null);
@@ -196,6 +202,7 @@ export function MarketplaceNavigationClient({ avatarUrl }: { avatarUrl: string |
             My Listings
           </Link>
           <Link href="/pricing" aria-current={pathname === "/pricing" ? "page" : undefined}>Pricing</Link>
+          {isAdmin ? <Link href="/admin" aria-current={pathname.startsWith("/admin") ? "page" : undefined}>Admin</Link> : null}
         </nav>
         <div className="desktop-header__right">
           <Link
@@ -269,6 +276,7 @@ export function MarketplaceNavigationClient({ avatarUrl }: { avatarUrl: string |
           My Listings
         </Link>
         <Link href="/pricing" onClick={closeMenus} aria-current={pathname === "/pricing" ? "page" : undefined}>Pricing</Link>
+        {isAdmin ? <Link href="/admin" onClick={closeMenus} aria-current={pathname.startsWith("/admin") ? "page" : undefined}>Admin</Link> : null}
       </nav>
     </header>
   );

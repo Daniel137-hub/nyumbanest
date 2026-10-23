@@ -272,13 +272,17 @@ export function VerifyEmailForm({
     setBusy(true);
     setMessage("");
     try {
-      const { error } = await createClient().auth.verifyOtp({
+      const { data, error } = await createClient().auth.verifyOtp({
         email: email.trim().toLowerCase(),
         token,
         type: "email",
       });
       if (error) {
         setMessage(error.status === 429 ? getAuthErrorMessage(error) : "That code is incorrect, expired, or already used. Request a new code and try again.");
+        return;
+      }
+      if (!data.user || !data.session) {
+        setMessage("We couldn't establish your verified session. Request a new code and try again.");
         return;
       }
       sessionStorage.removeItem(PENDING_EMAIL_KEY);
@@ -332,7 +336,7 @@ export function VerifyEmailForm({
 
   return <>
     <div className="verify-email-summary"><span><MailCheck size={21} aria-hidden="true" /></span>
-      <p>Enter the code sent to the email address you used to sign up.</p>
+      <p><strong>Check your email</strong> for the verification code, then enter it below. You can also verify using the link in the email.</p>
     </div>
     <form className="auth-form" method="post" onSubmit={verify} noValidate>
       <div className="auth-field">
@@ -357,7 +361,7 @@ export function VerifyEmailForm({
     </form>
     <div className="verify-email-actions">
       <button className="auth-text-button" type="button" onClick={resend} disabled={resending || cooldown > 0}>
-        {resending ? "Sending…" : cooldown > 0 ? `Resend code in ${cooldown}s` : "Resend code"}
+        {resending ? "Sending verification email…" : cooldown > 0 ? `Resend verification email in ${cooldown}s` : "Resend verification email"}
       </button>
       <Link className="auth-text-button" href={`/signup?next=${encodeURIComponent(nextPath)}`}>Change email or return to sign up</Link>
     </div>

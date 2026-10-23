@@ -17,12 +17,13 @@ export async function GET(request: NextRequest) {
   const next = safeNextPath(url.searchParams.get("next"));
   const nextUrl = new URL(next, request.url);
   const resetFlow = nextUrl.pathname === "/reset-password";
-  const signupFlow = url.searchParams.get("flow") === "signup";
   const recoveryFlow = url.searchParams.get("flow") === "recovery";
   const code = url.searchParams.get("code");
   const tokenHash = url.searchParams.get("token_hash");
   const rawType = url.searchParams.get("type");
   const type = EMAIL_OTP_TYPES.find((candidate) => candidate === rawType);
+  const signupFlow = !recoveryFlow && rawType !== "recovery" &&
+    (url.searchParams.get("flow") === "signup" || type === "signup");
   const { url: supabaseUrl, publishableKey } = getSupabaseConfig();
   const response = new NextResponse(null, { status: 307 });
   const supabase = createServerClient<Database>(supabaseUrl, publishableKey, {
@@ -42,8 +43,8 @@ export async function GET(request: NextRequest) {
   });
 
   if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error && data.user && data.session) {
       if (resetFlow && recoveryFlow) setRecoveryGrant(request, response);
       const successPath = signupFlow
         ? `/verify-email?verified=1&next=${encodeURIComponent(next)}`
@@ -51,8 +52,8 @@ export async function GET(request: NextRequest) {
       return destination(request, successPath, response);
     }
   } else if (tokenHash && type && EMAIL_OTP_TYPES.includes(type)) {
-    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
-    if (!error) {
+    const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+    if (!error && data.user && data.session) {
       if (type === "recovery" && resetFlow) setRecoveryGrant(request, response);
       const successPath = signupFlow
         ? `/verify-email?verified=1&next=${encodeURIComponent(next)}`

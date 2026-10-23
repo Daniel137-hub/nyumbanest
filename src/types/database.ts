@@ -54,6 +54,11 @@ export type Database = {
         Args: { target_property_id: string };
         Returns: { address: string | null; latitude: number | null; longitude: number | null }[];
       };
+      get_admin_property_private_location: {
+        Args: { target_property_id: string };
+        Returns: { address: string | null; latitude: number | null; longitude: number | null }[];
+      };
+      approve_property: { Args: { target_property_id: string }; Returns: undefined };
       review_property: { Args: { target_property_id: string; next_status: PropertyStatus; mark_verified: boolean }; Returns: undefined };
     };
     Enums: {

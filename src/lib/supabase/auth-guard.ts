@@ -19,3 +19,13 @@ export async function requireVerifiedUser(returnTo: string) {
   }
   return user;
 }
+
+export function hasAdminRole(user: { app_metadata: Record<string, unknown> }) {
+  return user.app_metadata.role === "admin";
+}
+
+export async function requireAdminUser(returnTo = "/admin") {
+  const user = await requireVerifiedUser(returnTo);
+  if (!hasAdminRole(user)) redirect("/my-listings");
+  return user;
+}

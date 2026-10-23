@@ -51,6 +51,88 @@ test("homepage and category routes use only published Supabase listings", async 
   await expect(page.getByText("Owner published listing")).toBeVisible();
 });
 
+test("homepage carousel loads its three local images and stays accessible without horizontal overflow", async ({
+  page,
+  request,
+}) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("requestfailed", (failedRequest) => {
+    browserErrors.push(`${failedRequest.url()}: ${failedRequest.failure()?.errorText ?? "request failed"}`);
+  });
+  const imagePaths = [
+    "/Hero-1.png",
+    "/Hero-2.png",
+    "/Hero-3.png",
+  ];
+  const imageResponses = await Promise.all(imagePaths.map((path) => request.get(path)));
+  expect(imageResponses.every((response) => response.ok())).toBe(true);
+
+  await page.goto("/");
+  const carousel = page.getByRole("group", { name: "Featured homes" });
+  const slides = carousel.getByRole("group", { name: /\d of 3/ });
+  await expect(slides).toHaveCount(3);
+  await expect(carousel.locator(".hero__slide")).toHaveCount(3);
+  await expect(carousel.locator("img")).toHaveCount(3);
+  await expect(slides.nth(0).getByRole("img", {
+    name: "Modern villa overlooking the city at sunset",
+  })).toBeAttached();
+  await expect(slides.nth(1).getByRole("img", {
+    name: "Contemporary apartment complex at sunset",
+  })).toBeAttached();
+  await expect(slides.nth(2).getByRole("img", {
+    name: "Residential plot of land in a green landscape at sunset",
+  })).toBeAttached();
+
+  const sampleActiveSlide = async (time: number) => carousel.evaluate((element, currentTime) => {
+    const slides = [...element.querySelectorAll<HTMLElement>(".hero__slide")];
+    const animations = slides.map((slide) => {
+      const animation = slide.getAnimations()[0];
+      animation.pause();
+      animation.currentTime = currentTime;
+      return animation;
+    });
+    const opacities = slides.map((slide) => Number(getComputedStyle(slide).opacity));
+    animations.forEach((animation) => animation.play());
+    return opacities.indexOf(Math.max(...opacities));
+  }, time);
+  await expect.poll(() => slides.nth(0).evaluate((element) =>
+    getComputedStyle(element).animationDuration,
+  )).toBe("21s");
+  expect(await sampleActiveSlide(500)).toBe(0);
+  expect(await sampleActiveSlide(7500)).toBe(1);
+  expect(await sampleActiveSlide(14500)).toBe(2);
+  expect(await sampleActiveSlide(20500)).toBe(0);
+
+  await page.locator(".hero").hover();
+  await expect.poll(() => slides.nth(0).evaluate((element) =>
+    getComputedStyle(element).animationPlayState,
+  )).toBe("paused");
+  await page.mouse.move(0, 0);
+  await page.getByLabel("Location").focus();
+  await expect.poll(() => slides.nth(0).evaluate((element) =>
+    getComputedStyle(element).animationPlayState,
+  )).toBe("paused");
+
+  for (const width of [390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 850 });
+    const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(documentWidth).toBeLessThanOrEqual(width);
+  }
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect.poll(() => slides.nth(0).evaluate((element) =>
+    getComputedStyle(element).animationName,
+  )).toBe("none");
+  await expect(carousel.locator(".hero__slide:visible")).toHaveCount(1);
+  await expect.poll(() => slides.nth(0).locator("img").evaluate((image) =>
+    (image as HTMLImageElement).naturalWidth,
+  )).toBeGreaterThan(0);
+  expect(browserErrors).toEqual([]);
+});
+
 test("search query filters and sorting are bounded and shareable in the URL", async ({ page, request }) => {
   await seedMarketplace(request);
   await page.goto("/search?location=Arusha&type=apartment&transaction=rent&minPrice=1000000&maxPrice=2500000&bedrooms=2&sort=price_asc");
@@ -200,12 +282,22 @@ test("property search remains usable on a narrow viewport", async ({ page, reque
 
 test("marketplace and authentication layouts fit mobile, tablet, and desktop widths", async ({ page, request }) => {
   await seedMarketplace(request);
-  const routes = ["/", "/properties", `/properties/${publishedId}`, "/signup"];
+  const widths = [320, 390, 680, 768, 820, 821, 900, 1024, 1440];
 
-  for (const width of [320, 390, 680, 768, 820, 821, 900, 1024, 1440]) {
+  for (const width of widths) {
     await page.setViewportSize({ width, height: 900 });
-    for (const route of routes) {
-      await page.goto(route);
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const dimensions = await page.evaluate(() => ({
+      viewportWidth: document.documentElement.clientWidth,
+      documentWidth: document.documentElement.scrollWidth,
+    }));
+    expect(dimensions.documentWidth, `homepage at ${width}px`).toBeLessThanOrEqual(dimensions.viewportWidth);
+  }
+
+  for (const width of [320, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const route of ["/properties", `/properties/${publishedId}`, "/signup"]) {
+      await page.goto(route, { waitUntil: "domcontentloaded" });
       const dimensions = await page.evaluate(() => ({
         viewportWidth: document.documentElement.clientWidth,
         documentWidth: document.documentElement.scrollWidth,
@@ -429,8 +521,8 @@ test("mobile menu and profile navigation preserve protected account workflows", 
     buffer: Buffer.from("not an image"),
   });
   await expect(photoUploadLabel).toHaveText("Uploading photo…");
-  await expect(page.locator(".profile-photo-form__message--error"))
-    .toContainText("Use a valid JPEG, PNG, or WebP photo.");
+  await expect(page.getByText("Use a valid JPEG, PNG, or WebP photo.", { exact: true }))
+    .toBeVisible();
   state = await (await page.request.get(`${mockAuthUrl}/__state`)).json();
   expect(state.profiles[0].avatar_url).toMatch(/\.webp$/i);
 
